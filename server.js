@@ -55,10 +55,9 @@ function enviarMensagem(numero, texto) {
 // Webhook Z-API
 app.post('/webhook', async (req, res) => {
   const body = req.body;
-  const numero = body?.data?.phone;
-  const mensagem = body?.data?.message?.text?.toLowerCase() || '';
-//  const numero = body.phone;
-//  const mensagem = body.message?.toLowerCase() || '';
+
+  const numero = body?.phone;
+  const mensagem = body?.text?.message?.toLowerCase() || '';
 
   if (!numero || !mensagem) {
     console.log('Mensagem inválida recebida:', JSON.stringify(body, null, 2));
@@ -103,7 +102,7 @@ app.post('/webhook', async (req, res) => {
       if (idx >= 0 && idx < user.horarios.length) {
         const horarioEscolhido = user.horarios[idx];
         await enviarMensagem(numero, `Agendamento confirmado para *${user.servico.nome}* às *${horarioEscolhido}*.\nNome: ${user.nome}\nTelefone: ${user.telefoneCliente}`);
-        delete usuarios[numero]; // resetar fluxo
+        delete usuarios[numero];
       } else {
         await enviarMensagem(numero, 'Opção inválida. Escolha um número da lista.');
       }
@@ -114,6 +113,7 @@ app.post('/webhook', async (req, res) => {
 
   res.sendStatus(200);
 });
+
 
 // Teste GET opcional
 app.get('/webhook', (req, res) => {
