@@ -1,125 +1,112 @@
-require('dotenv').config();
 const express = require('express');
+const bodyParser = require('body-parser');
 const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+require('dotenv').config();
 
-const horarios = {
-  'Cílios': 120,
-  'Depilação': 30,
-  'Sobrancelhas': 60
+app.use(bodyParser.json());
+
+const usuarios = {};
+
+const gatilhosIniciais = [
+  'oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite',
+  'dia', 'tarde', 'noite',
+  'cilios', 'cílios', 'depilacao', 'depilação', 'sobrancelhas', 'sombrancelhas'
+];
+
+// Serviços e suas durações
+const servicos = {
+  1: { nome: 'Cílios', duracao: 120 },
+  2: { nome: 'Depilação', duracao: 30 },
+  3: { nome: 'Sobrancelhas', duracao: 60 }
 };
 
-const agenda = []; // Agenda em memória
-
-// Utilitário para gerar horários disponíveis
-function gerarHorarios(servico) {
-  const duracao = horarios[servico];
-  const disponiveis = [];
-  let inicio = 17 * 60; // 17:00 em minutos
+// Gerar horários disponíveis das 17h às 22h
+function gerarHorarios(servicoMinutos) {
+  const inicio = 17 * 60;
   const fim = 22 * 60;
+  const horarios = [];
 
-  while (inicio + duracao <= fim) {
-    const h = Math.floor(inicio / 60).toString().padStart(2, '0');
-    const m = (inicio % 60).toString().padStart(2, '0');
-    const horarioTexto = `${h}:${m}`;
-
-    const jaOcupado = agenda.find(a =>
-      a.horario === horarioTexto
-    );
-
-    if (!jaOcupado) disponiveis.push(horarioTexto);
-
-    inicio += 15; // Avança em blocos de 15 min
+  for (let t = inicio; t + servicoMinutos <= fim; t += servicoMinutos) {
+    const h = Math.floor(t / 60).toString().padStart(2, '0');
+    const m = (t % 60).toString().padStart(2, '0');
+    horarios.push(`${h}:${m}`);
   }
 
-  return disponiveis;
+  return horarios;
 }
 
-const estados = {}; // Armazena onde cada cliente está na conversa
+function enviarMensagem(numero, texto) {
+  const url = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`;
+  return axios.post(url, {
+    phone: numero,
+    message: texto
+  });
+}
 
+// Webhook Z-API
 app.post('/webhook', async (req, res) => {
-  const { sender, message } = req.body;
-  const texto = message?.text?.body?.trim();
+  const body = req.body;
+  const numero = body.phone;
+  const mensagem = body.message?.toLowerCase() || '';
 
-  if (!texto) return res.sendStatus(200);
-
-  const numero = sender;
-  const estado = estados[numero] || {};
-
-  if (!estado.etapa) {
-    estados[numero] = { etapa: 'servico' };
-    return enviarMensagem(numero, 'Olá! Qual serviço você deseja agendar?\n1️⃣ Cílios\n2️⃣ Depilação\n3️⃣ Sobrancelhas');
+  if (!usuarios[numero]) {
+    usuarios[numero] = { etapa: 0 };
   }
 
-  if (estado.etapa === 'servico') {
-    let servico = '';
-    if (texto === '1') servico = 'Cílios';
-    else if (texto === '2') servico = 'Depilação';
-    else if (texto === '3') servico = 'Sobrancelhas';
-    else return enviarMensagem(numero, 'Escolha uma opção válida: 1, 2 ou 3.');
+  const user = usuarios[numero];
 
-    estados[numero] = { etapa: 'horario', servico };
-    const horariosDisponiveis = gerarHorarios(servico);
-    if (horariosDisponiveis.length === 0) {
-      return enviarMensagem(numero, `Não há horários disponíveis para ${servico} hoje.`);
+  try {
+    if (user.etapa === 0) {
+      if (gatilhosIniciais.some(g => mensagem.includes(g))) {
+        await enviarMensagem(numero, 'Olá! Bem-vindo(a) ao sistema de agendamento. Escolha um serviço:\n1. Cílios (2h)\n2. Depilação (30min)\n3. Sobrancelhas (1h)');
+        user.etapa = 1;
+      }
+    } else if (user.etapa === 1) {
+      if (['1', '2', '3'].includes(mensagem)) {
+        user.servico = servicos[mensagem];
+        user.etapa = 2;
+        await enviarMensagem(numero, `Ótimo! Você escolheu *${user.servico.nome}*.\nPor favor, informe seu *nome completo*.`);
+      } else {
+        await enviarMensagem(numero, 'Escolha inválida. Envie 1, 2 ou 3.');
+      }
+    } else if (user.etapa === 2) {
+      user.nome = mensagem;
+      user.etapa = 3;
+      await enviarMensagem(numero, `Obrigado, ${user.nome}. Agora envie seu *telefone* com DDD.`);
+    } else if (user.etapa === 3) {
+      user.telefoneCliente = mensagem;
+      user.etapa = 4;
+
+      const horarios = gerarHorarios(user.servico.duracao);
+      const lista = horarios.map((h, i) => `${i + 1}. ${h}`).join('\n');
+      user.horarios = horarios;
+
+      await enviarMensagem(numero, `Perfeito! Escolha um dos horários disponíveis:\n${lista}`);
+    } else if (user.etapa === 4) {
+      const idx = parseInt(mensagem) - 1;
+      if (idx >= 0 && idx < user.horarios.length) {
+        const horarioEscolhido = user.horarios[idx];
+        await enviarMensagem(numero, `Agendamento confirmado para *${user.servico.nome}* às *${horarioEscolhido}*.\nNome: ${user.nome}\nTelefone: ${user.telefoneCliente}`);
+        delete usuarios[numero]; // resetar fluxo
+      } else {
+        await enviarMensagem(numero, 'Opção inválida. Escolha um número da lista.');
+      }
     }
-
-    const lista = horariosDisponiveis.map((h, i) => `${i + 1}️⃣ ${h}`).join('\n');
-    estados[numero].opcoes = horariosDisponiveis;
-
-    return enviarMensagem(numero, `Escolha um horário para *${servico}*:\n${lista}`);
-  }
-
-  if (estado.etapa === 'horario') {
-    const indice = parseInt(texto) - 1;
-    const horarioEscolhido = estado.opcoes?.[indice];
-
-    if (!horarioEscolhido) return enviarMensagem(numero, 'Escolha um número válido da lista.');
-
-    estados[numero].horario = horarioEscolhido;
-    estados[numero].etapa = 'nome';
-
-    return enviarMensagem(numero, 'Por favor, digite seu nome:');
-  }
-
-  if (estado.etapa === 'nome') {
-    estados[numero].nome = texto;
-    estados[numero].etapa = 'telefone';
-    return enviarMensagem(numero, 'Agora digite seu número de telefone para confirmação:');
-  }
-
-  if (estado.etapa === 'telefone') {
-    const { nome, servico, horario } = estados[numero];
-    agenda.push({ nome, servico, horario, telefone: texto });
-
-    estados[numero] = null;
-
-    return enviarMensagem(numero,
-      `✅ Agendamento confirmado!\n\n🧍 Nome: *${nome}*\n📞 Telefone: *${texto}*\n💅 Serviço: *${servico}*\n🕒 Horário: *${horario}*`
-    );
+  } catch (err) {
+    console.error('Erro ao enviar mensagem:', err.message);
   }
 
   res.sendStatus(200);
 });
 
-// Função para enviar mensagem via Z-API
-async function enviarMensagem(numero, texto) {
-  const url = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-message`;
-
-  try {
-    await axios.post(url, {
-      phone: numero,
-      message: texto
-    });
-  } catch (err) {
-    console.error('Erro ao enviar mensagem:', err.message);
-  }
-}
-
-app.listen(PORT, () => {
-  console.log(`🚀 Bot rodando na porta ${PORT}`);
+// Teste GET opcional
+app.get('/webhook', (req, res) => {
+  res.json({ message: 'Webhook de agendamento ativo.' });
 });
 
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
