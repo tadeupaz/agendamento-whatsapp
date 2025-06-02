@@ -16,6 +16,11 @@ const gatilhosIniciais = [
   'cilios', 'cílios', 'depilacao', 'depilação', 'sobrancelhas', 'sombrancelhas'
 ];
 
+app.get('/', (req, res) => {
+  res.send('Bot de agendamento rodando...');
+});
+
+
 // Serviços e suas durações
 const servicos = {
   1: { nome: 'Cílios', duracao: 120 },
