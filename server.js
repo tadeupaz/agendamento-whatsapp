@@ -55,8 +55,15 @@ function enviarMensagem(numero, texto) {
 // Webhook Z-API
 app.post('/webhook', async (req, res) => {
   const body = req.body;
-  const numero = body.phone;
-  const mensagem = body.message?.toLowerCase() || '';
+  const numero = body?.data?.phone;
+  const mensagem = body?.data?.message?.text?.toLowerCase() || '';
+//  const numero = body.phone;
+//  const mensagem = body.message?.toLowerCase() || '';
+
+  if (!numero || !mensagem) {
+    console.log('Mensagem inválida recebida:', JSON.stringify(body, null, 2));
+    return res.sendStatus(200);
+  }
 
   if (!usuarios[numero]) {
     usuarios[numero] = { etapa: 0 };
