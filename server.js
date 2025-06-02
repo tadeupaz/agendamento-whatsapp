@@ -43,8 +43,9 @@ function gerarHorarios(servicoMinutos) {
   return horarios;
 }
 
+//const url = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`;
 function enviarMensagem(numero, texto) {
-  const url = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`;
+  const url = `https://api.z-api.io/instances/3E21F16C3E0720385B1862AF4B231A0B/token/D257E6B472C928BD4A3C1734/send-text`;
   return axios.post(url, {
     phone: numero,
     message: texto
