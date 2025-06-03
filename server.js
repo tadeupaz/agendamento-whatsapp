@@ -123,11 +123,6 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-return axios.post(url, {
-  phone: numero,
-  message: texto
-});
-
 // Teste GET opcional
 app.get('/webhook', (req, res) => {
   res.json({ message: 'Webhook de agendamento ativo.' });
